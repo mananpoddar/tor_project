@@ -56,7 +56,8 @@ class Circuit:
 		"""
 		# First create a CREATE2 Cell.
 		x, x_bytes, gx, gx_bytes = CoreCryptoDH.generate_dh_priv_key()
-		create_cell = Builder.build_create_cell('TAP', x_bytes, gx_bytes, self.circ_id, self.node_container[1].onion_key_pub)
+		create_cell = Builder.build_create_cell('TAP', x_bytes, gx_bytes, self.circ_id,
+		                                        self.node_container[1].onion_key_pub)
 
 		# Sending a JSON String down the socket
 		self.skt.client_send_data(Serialize.obj_to_json(create_cell).encode('utf-8'))
@@ -87,7 +88,8 @@ class Circuit:
 		# For hop2 we get its IP:port for LSPEC ==> Link specifier
 		hop2_ip = str(self.node_container[2].host)
 		hop2_port = str(self.node_container[2].port)
-		extend_cell = Builder.build_extend_cell('TAP', x_bytes, gx_bytes, self.circ_id, self.node_container[2].onion_key_pub, hop2_ip+':'+hop2_port)
+		extend_cell = Builder.build_extend_cell('TAP', x_bytes, gx_bytes, self.circ_id,
+		                                        self.node_container[2].onion_key_pub, hop2_ip + ':' + hop2_port)
 
 		print(Serialize.obj_to_json(extend_cell))
 
@@ -120,7 +122,8 @@ class Circuit:
 		# For hop3 we get its IP:port for LSPEC ==> Link specifier
 		hop3_ip = str(self.node_container[3].host)
 		hop3_port = str(self.node_container[3].port)
-		extend_cell = Builder.build_extend_cell('TAP', x_bytes, gx_bytes, self.circ_id, self.node_container[3].onion_key_pub, hop3_ip+':'+hop3_port)
+		extend_cell = Builder.build_extend_cell('TAP', x_bytes, gx_bytes, self.circ_id,
+		                                        self.node_container[3].onion_key_pub, hop3_ip + ':' + hop3_port)
 
 		print(Serialize.obj_to_json(extend_cell))
 
@@ -138,3 +141,31 @@ class Circuit:
 			return -1
 
 		return 0
+
+	def send_relay_begin(self, ip_addr: str, port: int = 80):
+
+		# First set the address and port along with flags
+		addrport = ip_addr + ':' + str(port)
+		flag_dict = {
+			'IPV6_PREF': 0,
+			'IPV4_NOT_OK': 0,
+			'IPV6_OK': 1
+		}  # Need to set the flag according to the spec. But for now its fine
+
+		# Build a begin cell to send to the exit node
+		begin_cell = Builder.build_begin_cell(addrport, flag_dict, self.circ_id, 1, 1)
+
+		# Send the begin cell down the first hop
+		# Sending a JSON String down the socket
+		self.skt.client_send_data(Serialize.obj_to_json(begin_cell).encode('utf-8'))
+
+		# Wait for the relay_connected cell to arrive
+		# Get the relay_connected cell in response and convert it to python Cell Object
+		recv_data = self.skt.client_recv_data().decode('utf-8')
+		dict_cell = Deserialize.json_to_dict(recv_data)
+		relay_connected_cell = Parser.parse_relay_connected_cell(dict_cell)
+
+		if relay_connected_cell is not None:
+			return 0
+		else:
+			return -1

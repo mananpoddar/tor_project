@@ -1,4 +1,5 @@
 import os
+from typing import Dict
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
@@ -179,11 +180,11 @@ class CoreCryptoRSA:
 		key = hkdf.derive(message)
 
 		kdf_tor_dict = {
-			'KH': str(key[:CryptoConstants.HASH_LEN]),
-			'Df': str(key[CryptoConstants.HASH_LEN:(2 * CryptoConstants.HASH_LEN)]),
-			'Db': str(key[(2 * CryptoConstants.HASH_LEN):(3 * CryptoConstants.HASH_LEN)]),
-			'Kf': str(key[(3 * CryptoConstants.HASH_LEN):((3 * CryptoConstants.HASH_LEN) + CryptoConstants.KEY_LEN)]),
-			'Kb': str(key[((3 * CryptoConstants.HASH_LEN) + CryptoConstants.KEY_LEN):(
+			'KH': EncoderDecoder.bytes_to_utf8str(key[:CryptoConstants.HASH_LEN]),
+			'Df': EncoderDecoder.bytes_to_utf8str(key[CryptoConstants.HASH_LEN:(2 * CryptoConstants.HASH_LEN)]),
+			'Db': EncoderDecoder.bytes_to_utf8str(key[(2 * CryptoConstants.HASH_LEN):(3 * CryptoConstants.HASH_LEN)]),
+			'Kf': EncoderDecoder.bytes_to_utf8str(key[(3 * CryptoConstants.HASH_LEN):((3 * CryptoConstants.HASH_LEN) + CryptoConstants.KEY_LEN)]),
+			'Kb': EncoderDecoder.bytes_to_utf8str(key[((3 * CryptoConstants.HASH_LEN) + CryptoConstants.KEY_LEN):(
 						(3 * CryptoConstants.HASH_LEN) + (2 * CryptoConstants.KEY_LEN))])
 		}
 
@@ -244,6 +245,25 @@ class CoreCryptoDH:
 		shared_key = x.exchange(gy)
 
 		return shared_key
+
+
+class CoreCryptoSymmetric:
+
+	@staticmethod
+	def encrypt_from_origin(message: bytes, kdf_dict1: Dict, kdf_dict2: Dict, kdf_dict3: Dict) -> bytes:
+		init_vector = bytes(CryptoConstants.KEY_LEN)
+
+		kdf_dict_arr = [kdf_dict1, kdf_dict2, kdf_dict3]
+		encryptor = None
+		for i in range(0, 3):
+			kf = kdf_dict_arr[i]['Kf']
+			cipher = Cipher(algorithms.AES(kf), modes.CTR(init_vector), backend=default_backend())
+			encryptor = cipher.encryptor()
+			message = encryptor.update(message)
+
+		message = message + encryptor.finalize()
+
+		return message
 
 
 class CoreCryptoMisc:

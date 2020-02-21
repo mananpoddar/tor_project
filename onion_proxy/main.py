@@ -43,6 +43,14 @@ def main():
 				if err_code == 0:
 					print("Router 3: Established the session key. DH Handshake successful")
 					print("The session key for router 3:", circuit.session_key03)
+
+					# Trying out YouTube
+					err_code = circuit.send_relay_begin("74.125.130.190")
+					if err_code == 0:
+						print("Connected to the IP address provided!")
+					else:
+						print("Connection failed to IP address!")
+
 				else:
 					print("Router 3: could not establish the session key. Closed the TCP Connection with the node 3")
 			else:
