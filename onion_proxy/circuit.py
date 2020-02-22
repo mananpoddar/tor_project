@@ -153,7 +153,7 @@ class Circuit:
 		}  # Need to set the flag according to the spec. But for now its fine
 
 		# Build a begin cell to send to the exit node
-		begin_cell = Builder.build_begin_cell(addrport, flag_dict, self.circ_id, 1, 1)
+		begin_cell = Builder.build_begin_cell(addrport, flag_dict, self.circ_id, 0, 1, self.session_key01, self.session_key02, self.session_key03)
 
 		# Send the begin cell down the first hop
 		# Sending a JSON String down the socket

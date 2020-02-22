@@ -112,3 +112,13 @@ class ProcessCell:
 			print("Extended cell sent")
 
 			return 1
+
+	def handle_relay_begin_cell(self):
+		begin_cell = Parser.parse_begin_cell(self.cell_dict)
+
+		if begin_cell.PAYLOAD.RECOGNIZED != str(0):
+			self.skt.client_send_data(Serialize.obj_to_json(begin_cell).encode('utf-8'))
+			# Pass the cell to next hop
+		elif begin_cell.PAYLOAD.RECOGNIZED == str(0):
+			print("Reached the last hop!! Connecting to end destination after this!")
+		return 3

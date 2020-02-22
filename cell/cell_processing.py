@@ -5,7 +5,7 @@ from cell.control_cell import CreateCellPayload, TapCHData, TapSHData, CreatedCe
 from cell.relay_cell import RelayCellPayload, RelayExtendedPayload, RelayBeginPayload, RelayExtendPayload
 from cell.serializers import EncoderDecoder
 from connection.skt import Skt
-from crypto.core_crypto import CoreCryptoRSA, CoreCryptoDH, CoreCryptoMisc
+from crypto.core_crypto import CoreCryptoRSA, CoreCryptoDH, CoreCryptoMisc, CoreCryptoSymmetric
 
 
 class Builder:
@@ -148,23 +148,25 @@ class Builder:
 
 		# Construct the Relay cell with extended2 payload which is the payload for the Cell class
 		extended_cell_payload = RelayCellPayload(RelayCellPayload.RELAY_CMD_ENUM['RELAY_EXTENDED2'], False, 0, "",
-		                                         Cell.PAYLOAD_LEN - 11, relay_extended_cell_payload)
+												Cell.PAYLOAD_LEN - 11, relay_extended_cell_payload)
 
 		# Construct the actual cell
 		extended_cell = Cell(circ_id, Cell.CMD_ENUM['RELAY'], Cell.PAYLOAD_LEN, extended_cell_payload)
 		return extended_cell
 
 	@staticmethod
-	def build_begin_cell(addrport: str, flag_dict, circ_id: int, recognized, streamID) -> Cell:
+	def build_begin_cell(addrport: str, flag_dict: Dict[str, int], circ_id: int, recognized: int, stream_id: int, kdf_dict1: Dict[str, str], kdf_dict2: Dict[str, str], kdf_dict3: Dict[str, str]) -> Cell:
 		"""
 		The method to build a Begin Cell
 		:param addrport: The string containing ip_addr:port
-		:param flag_dict:
-		:param circ_id:
-		:param recognized:
-		:param streamID:
+		:param flag_dict: The dictionary passed to created the flags value as a string.
+		:param circ_id: The circuit Id
+		:param recognized: The recognized field
+		:param stream_id: The stream Id
 		:return: The Begin Cell object
 		"""
+
+		# Set the flags string
 		flags = ''
 		i = 0
 		while i < 29:
@@ -186,17 +188,36 @@ class Builder:
 		else:
 			flags = flags + '0'
 
-		begin_cell_payload_relay = RelayBeginPayload(addrport, flags)
+		# Digest calculation
+		digest_dict = {
+			'addrport': addrport.encode('utf-8'),
+			'flags': flags.encode('utf-8'),
+			'relay_begin_cmd': str(RelayCellPayload.RELAY_CMD_ENUM['RELAY_BEGIN']).encode('utf-8'),
+			'recognized': str(recognized).encode('utf-8'),
+			'stream_id': str(stream_id).encode('utf-8'),
+			'relay_payload_len': str(Cell.PAYLOAD_LEN - 11).encode('utf-8')
 
-		payload_dict = {
-			'ADDRPORT': addrport,
-			'FLAGS': flags
 		}
-		digest = CoreCryptoMisc.calculate_digest(payload_dict)
+		digest = CoreCryptoMisc.calculate_digest(digest_dict)
 
-		begin_cell_payload = RelayCellPayload(RelayCellPayload.RELAY_CMD_ENUM['RELAY_BEGIN'], recognized, streamID,
-											digest, Cell.PAYLOAD_LEN - 11, begin_cell_payload_relay)
+		# Encrypting the values
+		enc_addrport = EncoderDecoder.bytes_to_utf8str(CoreCryptoSymmetric.encrypt_from_origin(digest_dict['addrport'], kdf_dict1, kdf_dict2, kdf_dict3))
+		enc_flags = EncoderDecoder.bytes_to_utf8str(CoreCryptoSymmetric.decrypt_from_origin(digest_dict['flags'], kdf_dict1, kdf_dict2, kdf_dict3))
+		enc_relay_begin_cmd = EncoderDecoder.bytes_to_utf8str(CoreCryptoSymmetric.encrypt_from_origin(digest_dict['relay_begin_cmd'], kdf_dict1, kdf_dict2, kdf_dict3))
+		enc_recognized = EncoderDecoder.bytes_to_utf8str(CoreCryptoSymmetric.encrypt_from_origin(digest_dict['recognized'], kdf_dict1, kdf_dict2, kdf_dict3))
+		enc_stream_id = EncoderDecoder.bytes_to_utf8str(CoreCryptoSymmetric.encrypt_from_origin(digest_dict['stream_id'], kdf_dict1, kdf_dict2, kdf_dict3))
+		enc_digest = EncoderDecoder.bytes_to_utf8str(CoreCryptoSymmetric.encrypt_from_origin(digest, kdf_dict1, kdf_dict2, kdf_dict3))
+		enc_relay_payload_len = EncoderDecoder.bytes_to_utf8str(CoreCryptoSymmetric.encrypt_from_origin(digest_dict['relay_payload_len'], kdf_dict1, kdf_dict2, kdf_dict3))
+
+		# Building the cell with encrypted values
+		begin_cell_payload_relay = RelayBeginPayload(enc_addrport, enc_flags)
+
+		begin_cell_payload = RelayCellPayload(enc_relay_begin_cmd, enc_recognized, enc_stream_id,
+											enc_digest, enc_relay_payload_len, begin_cell_payload_relay)
+
 		begin_cell = Cell(circ_id, Cell.CMD_ENUM['RELAY'], Cell.PAYLOAD_LEN, begin_cell_payload)
+
+		# Return the built cell
 		return begin_cell
 
 
@@ -329,11 +350,22 @@ class Parser:
 		if dict_cell['PAYLOAD']['RELAY_CMD'] != RelayCellPayload.RELAY_CMD_ENUM['RELAY_BEGIN']:
 			return None
 
-		begin_cell_payload_relay = RelayBeginPayload(dict_cell['PAYLOAD']['Data']['ADDRPORT'],
-		                                             dict_cell['PAYLOAD']['Data']['FLAGS'])
-		begin_cell_payload = RelayCellPayload(dict_cell['PAYLOAD']['RELAY_CMD'], dict_cell['PAYLOAD']['RECOGNIZED'],
-		                                      dict_cell['PAYLOAD']['StreamID'], dict_cell['PAYLOAD']['Digest'],
-		                                      dict_cell['PAYLOAD']['Length'], begin_cell_payload_relay)
+		# {'CIRCID': 1, 'CMD': 3, 'LENGTH': 509, 'PAYLOAD': {'RELAY_CMD': 'Lw==', 'RECOGNIZED': 'Lg==', 'StreamID': 'Lw==', 'Digest': 'AU433+38tV0Sw3w8bTxDA/7w0rmKzWGY2i2IKKzscAo=', 'Length': 'KhEF', 'Data': {'ADDRPORT': 'LxoKOBVbDrcdrHgt7Pw=', 'FLAGS': 'LhgNJhVFDqkcpnwp6PhK0s2nRlY+1TTjBWhPYohCgK8='}}}
+
+		dec_relay_cmd = CoreCryptoSymmetric.decrypt_for_hop(EncoderDecoder.utf8str_to_bytes(dict_cell['PAYLOAD']['RELAY_CMD']))
+		dec_recognized = EncoderDecoder.utf8str_to_bytes(dict_cell['PAYLOAD']['RECOGNIZED'])
+		dec_streamId = EncoderDecoder.utf8str_to_bytes(dict_cell['PAYLOAD']['StreamID'])
+		dec_digest = EncoderDecoder.utf8str_to_bytes(dict_cell['PAYLOAD']['Digest'])
+		dec_relay_len = EncoderDecoder.utf8str_to_bytes(dict_cell['PAYLOAD']['Length'])
+		dec_addrport = EncoderDecoder.utf8str_to_bytes(dict_cell['PAYLOAD']['Data']['ADDRPORT'])
+		dec_flags = EncoderDecoder.utf8str_to_bytes(dict_cell['PAYLOAD']['Data']['FLAGS'])
+
+		begin_cell_payload_relay = RelayBeginPayload(dec_addrport.decode('utf-8'),
+													dec_flags.decode('utf-8'))
+		begin_cell_payload = RelayCellPayload(dec_relay_cmd.decode('utf-8'), dec_recognized.decode('utf-8'),
+											dec_streamId.decode('utf-8'), dec_digest.decode('utf-8'),
+											dec_relay_len.decode('utf-8'), begin_cell_payload_relay)
+
 		begin_cell = Cell(dict_cell['CIRCID'], dict_cell['CMD'], dict_cell['LENGTH'], begin_cell_payload)
 
 		return begin_cell

@@ -44,7 +44,7 @@ def main():
 					print("Router 3: Established the session key. DH Handshake successful")
 					print("The session key for router 3:", circuit.session_key03)
 
-					# Trying out YouTube
+					# # Trying out YouTube
 					err_code = circuit.send_relay_begin("74.125.130.190")
 					if err_code == 0:
 						print("Connected to the IP address provided!")
